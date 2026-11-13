@@ -1,36 +1,100 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ResumeAI — AI-Powered Resume Screening Platform
 
-## Getting Started
+An intelligent resume screening system built with **Next.js 16**, **AI Evaluation Engine**, **Prisma**, and **Tailwind CSS**.
 
-First, run the development server:
+## Features
+- 🔐 **Authentication** — Sign up / sign in with JWT sessions (NextAuth.js)
+- 📄 **Resume Upload** — Drag-and-drop PDF/TXT upload with real-time parsing
+- 🤖 **AI Evaluation** — Automated AI analyzes resumes for skills, experience, and role fit
+- 🎯 **Role Recommendations** — Top 3 best-fit job roles with match percentages
+- 💪 **Strength & Gap Analysis** — Detailed strengths and areas to improve
+- 📊 **Analytics Dashboard** — Score distributions, top roles, and history charts
 
+## Microservices (API Routes)
+
+| Service | Endpoint | Description |
+|---|---|---|
+| Auth Service | `POST /api/auth/register` | User registration |
+| Auth Service | `POST /api/auth/[...nextauth]` | NextAuth sign-in/out |
+| Upload Service | `POST /api/upload` | Resume file upload + PDF parsing |
+| Screening Service | `POST /api/screen` | Automated AI screening |
+| Analytics Service | `GET /api/analytics` | Dashboard statistics |
+| Candidates Service | `GET /api/candidates` | List all evaluations |
+
+## Setup
+
+### 1. Install Dependencies
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Configure Environment
+Edit `.env.local` and add your credentials:
+```env
+DATABASE_URL="file:./dev.db"
+NEXTAUTH_SECRET="your-secret-at-least-32-chars"
+NEXTAUTH_URL="http://localhost:3000"
+MINIMAX_API_KEY="your-minimax-api-key"
+MINIMAX_GROUP_ID="your-minimax-group-id"
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+> **Get MiniMax API Key**: Sign up at https://www.minimaxi.com/
+> Navigate to API → Create API Key. Copy your API Key and Group ID.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Set Up Database
+```bash
+npx prisma generate
+npx prisma db push
+```
+> Set `DATABASE_URL` env var first, or run via powershell:
+> `$env:DATABASE_URL="file:./dev.db"; .\node_modules\.bin\prisma db push`
 
-## Learn More
+### 4. Run Development Server
+```bash
+npm run dev
+```
+Open http://localhost:3000
 
-To learn more about Next.js, take a look at the following resources:
+## Tech Stack
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Framework**: Next.js 16 (App Router, Turbopack)
+- **Language**: TypeScript
+- **Auth**: NextAuth.js v5 (beta)
+- **Database**: SQLite via Prisma ORM
+- **AI**: MiniMax Chat API (`abab6.5s-chat`)
+- **PDF Parsing**: pdf-parse
+- **Styling**: Tailwind CSS v4
+- **Charts**: Recharts
+- **Icons**: Lucide React
+- **File Upload**: react-dropzone
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project Structure
 
-## Deploy on Vercel
+```
+app/
+├── api/
+│   ├── auth/[...nextauth]/   ← Auth service
+│   ├── auth/register/        ← User registration
+│   ├── upload/               ← Upload microservice
+│   ├── screen/               ← AI screening microservice
+│   ├── analytics/            ← Analytics microservice
+│   └── candidates/           ← Candidates microservice
+├── auth/
+│   ├── signin/               ← Sign-in page
+│   └── signup/               ← Sign-up page
+├── dashboard/                ← Main dashboard
+├── results/[id]/             ← Evaluation results
+└── analytics/                ← Analytics page
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+components/
+├── Navbar.tsx
+└── ResumeUploader.tsx
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+lib/
+├── auth.ts                   ← NextAuth config
+├── minimax.ts                ← MiniMax API client
+└── prisma.ts                 ← Prisma client singleton
+
+prisma/
+└── schema.prisma             ← Database schema
+```

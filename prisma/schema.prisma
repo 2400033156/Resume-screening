@@ -1,0 +1,50 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String      @id @default(cuid())
+  name          String?
+  email         String      @unique
+  password      String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  candidates    Candidate[]
+}
+
+model Candidate {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileName      String
+  fileSize      Int
+  rawText       String
+  status        String      @default("pending") // pending | processing | completed | failed
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  evaluation    Evaluation?
+}
+
+model Evaluation {
+  id              String    @id @default(cuid())
+  candidateId     String    @unique
+  candidate       Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  overallScore    Int
+  summary         String
+  strengths       String    // JSON array stored as string
+  gaps            String    // JSON array stored as string
+  skills          String    // JSON array stored as string
+  roles           String    // JSON array of {role, match, description}
+  experience      String?
+  education       String?
+  createdAt       DateTime  @default(now())
+}
+
