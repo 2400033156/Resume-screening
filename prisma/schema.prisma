@@ -1,12 +1,11 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Prisma schema for PostgreSQL (Neon)
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -26,7 +25,7 @@ model Candidate {
   user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   fileName      String
   fileSize      Int
-  rawText       String
+  rawText       String      @db.Text
   status        String      @default("pending") // pending | processing | completed | failed
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -38,13 +37,12 @@ model Evaluation {
   candidateId     String    @unique
   candidate       Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   overallScore    Int
-  summary         String
-  strengths       String    // JSON array stored as string
-  gaps            String    // JSON array stored as string
-  skills          String    // JSON array stored as string
-  roles           String    // JSON array of {role, match, description}
-  experience      String?
-  education       String?
+  summary         String    @db.Text
+  strengths       String    @db.Text // JSON array stored as string
+  gaps            String    @db.Text // JSON array stored as string
+  skills          String    @db.Text // JSON array stored as string
+  roles           String    @db.Text // JSON array of {role, match, description}
+  experience      String?   @db.Text
+  education       String?   @db.Text
   createdAt       DateTime  @default(now())
 }
-
