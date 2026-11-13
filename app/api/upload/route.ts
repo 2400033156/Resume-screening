@@ -2,38 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-// Polyfills for PDF.js / pdf-parse in Node.js serverless runtimes (Vercel)
-if (typeof (globalThis as any).DOMMatrix === "undefined") {
-  (globalThis as any).DOMMatrix = class DOMMatrix {};
-}
-if (typeof (globalThis as any).ImageData === "undefined") {
-  (globalThis as any).ImageData = class ImageData {};
-}
-if (typeof (globalThis as any).Path2D === "undefined") {
-  (globalThis as any).Path2D = class Path2D {};
-}
-
-// Fallback plain-text stream extractor for PDF
-function extractRawTextFromPdf(buffer: Buffer): string {
-  try {
-    const str = buffer.toString("latin1");
-    const textPieces: string[] = [];
-    const textRegex = /\(([^)]+)\)\s*Tj|\[([^\]]+)\]\s*TJ/g;
-    let match;
-    while ((match = textRegex.exec(str)) !== null) {
-      const piece = match[1] || match[2] || "";
-      const cleaned = piece.replace(/\\(\d{3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
-                           .replace(/\\[()\\]/g, (m) => m[1]);
-      if (cleaned.trim().length > 1) {
-        textPieces.push(cleaned);
-      }
-    }
-    return textPieces.join(" ");
-  } catch {
-    return "";
-  }
-}
-
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
@@ -59,42 +27,27 @@ export async function POST(req: NextRequest) {
     }
 
     const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-
     let rawText = "";
 
     if (file.type === "application/pdf") {
       try {
-        // Dynamic import for pdf-parse with DOMMatrix polyfill active
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const pdfModule: any = await import("pdf-parse");
-
-        if (typeof pdfModule.PDFParse === "function") {
-          const parser = new pdfModule.PDFParse({ data: buffer });
-          const result = await parser.getText();
-          rawText = result.text || "";
-        } else if (typeof pdfModule.default === "function") {
-          const result = await pdfModule.default(buffer);
-          rawText = result.text || "";
-        } else if (typeof pdfModule === "function") {
-          const result = await pdfModule(buffer);
-          rawText = result.text || "";
-        }
-      } catch (parseErr) {
-        console.warn("Primary PDF parse failed, attempting fallback text extraction:", parseErr);
-        rawText = extractRawTextFromPdf(buffer);
-      }
-
-      if (!rawText || rawText.trim().length < 20) {
-        rawText = extractRawTextFromPdf(buffer);
+        const { extractText } = await import("unpdf");
+        const parsed = await extractText(new Uint8Array(bytes));
+        const textArray = Array.isArray(parsed.text) ? parsed.text : [String(parsed.text || "")];
+        rawText = textArray.join("\n\n").trim();
+      } catch (err: any) {
+        console.error("PDF extraction error with unpdf:", err?.message || err);
       }
     } else {
-      rawText = buffer.toString("utf-8");
+      rawText = Buffer.from(bytes).toString("utf-8");
     }
 
-    if (!rawText || rawText.trim().length < 30) {
+    if (!rawText || rawText.trim().length < 20) {
       return NextResponse.json(
-        { error: "Could not extract text from file. Please ensure the file contains readable text (not a scanned image)." },
+        {
+          error:
+            "Could not extract readable text from your file. Please ensure the document is not an image-only scan or encrypted.",
+        },
         { status: 400 }
       );
     }
@@ -104,14 +57,20 @@ export async function POST(req: NextRequest) {
         userId: session.user.id,
         fileName: file.name,
         fileSize: file.size,
-        rawText: rawText.slice(0, 10000), // Limit stored text
+        rawText: rawText.slice(0, 15000), // Store up to 15,000 chars
         status: "pending",
       },
     });
 
-    return NextResponse.json({ candidateId: candidate.id, fileName: candidate.fileName }, { status: 201 });
+    return NextResponse.json(
+      { candidateId: candidate.id, fileName: candidate.fileName },
+      { status: 201 }
+    );
   } catch (err: any) {
     console.error("Upload error:", err?.message || err);
-    return NextResponse.json({ error: err?.message || "Failed to upload resume" }, { status: 500 });
+    return NextResponse.json(
+      { error: err?.message || "Failed to process resume upload" },
+      { status: 500 }
+    );
   }
 }
