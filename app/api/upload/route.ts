@@ -2,6 +2,38 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+// Polyfills for PDF.js / pdf-parse in Node.js serverless runtimes (Vercel)
+if (typeof (globalThis as any).DOMMatrix === "undefined") {
+  (globalThis as any).DOMMatrix = class DOMMatrix {};
+}
+if (typeof (globalThis as any).ImageData === "undefined") {
+  (globalThis as any).ImageData = class ImageData {};
+}
+if (typeof (globalThis as any).Path2D === "undefined") {
+  (globalThis as any).Path2D = class Path2D {};
+}
+
+// Fallback plain-text stream extractor for PDF
+function extractRawTextFromPdf(buffer: Buffer): string {
+  try {
+    const str = buffer.toString("latin1");
+    const textPieces: string[] = [];
+    const textRegex = /\(([^)]+)\)\s*Tj|\[([^\]]+)\]\s*TJ/g;
+    let match;
+    while ((match = textRegex.exec(str)) !== null) {
+      const piece = match[1] || match[2] || "";
+      const cleaned = piece.replace(/\\(\d{3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
+                           .replace(/\\[()\\]/g, (m) => m[1]);
+      if (cleaned.trim().length > 1) {
+        textPieces.push(cleaned);
+      }
+    }
+    return textPieces.join(" ");
+  } catch {
+    return "";
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
@@ -32,29 +64,39 @@ export async function POST(req: NextRequest) {
     let rawText = "";
 
     if (file.type === "application/pdf") {
-      // Dynamic import for pdf-parse (supports both v2 class API and v1 function API)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pdfModule: any = await import("pdf-parse");
+      try {
+        // Dynamic import for pdf-parse with DOMMatrix polyfill active
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pdfModule: any = await import("pdf-parse");
 
-      if (typeof pdfModule.PDFParse === "function") {
-        const parser = new pdfModule.PDFParse({ data: buffer });
-        const result = await parser.getText();
-        rawText = result.text || "";
-      } else if (typeof pdfModule.default === "function") {
-        const result = await pdfModule.default(buffer);
-        rawText = result.text || "";
-      } else if (typeof pdfModule === "function") {
-        const result = await pdfModule(buffer);
-        rawText = result.text || "";
-      } else {
-        throw new Error("Unable to initialize PDF parser engine");
+        if (typeof pdfModule.PDFParse === "function") {
+          const parser = new pdfModule.PDFParse({ data: buffer });
+          const result = await parser.getText();
+          rawText = result.text || "";
+        } else if (typeof pdfModule.default === "function") {
+          const result = await pdfModule.default(buffer);
+          rawText = result.text || "";
+        } else if (typeof pdfModule === "function") {
+          const result = await pdfModule(buffer);
+          rawText = result.text || "";
+        }
+      } catch (parseErr) {
+        console.warn("Primary PDF parse failed, attempting fallback text extraction:", parseErr);
+        rawText = extractRawTextFromPdf(buffer);
+      }
+
+      if (!rawText || rawText.trim().length < 20) {
+        rawText = extractRawTextFromPdf(buffer);
       }
     } else {
       rawText = buffer.toString("utf-8");
     }
 
-    if (!rawText || rawText.trim().length < 50) {
-      return NextResponse.json({ error: "Could not extract text from file. Please ensure the file is not scanned/image-only." }, { status: 400 });
+    if (!rawText || rawText.trim().length < 30) {
+      return NextResponse.json(
+        { error: "Could not extract text from file. Please ensure the file contains readable text (not a scanned image)." },
+        { status: 400 }
+      );
     }
 
     const candidate = await prisma.candidate.create({
@@ -68,8 +110,8 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ candidateId: candidate.id, fileName: candidate.fileName }, { status: 201 });
-  } catch (err) {
-    console.error("Upload error:", err);
-    return NextResponse.json({ error: "Failed to upload resume" }, { status: 500 });
+  } catch (err: any) {
+    console.error("Upload error:", err?.message || err);
+    return NextResponse.json({ error: err?.message || "Failed to upload resume" }, { status: 500 });
   }
 }
